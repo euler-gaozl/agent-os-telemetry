@@ -42,3 +42,10 @@ a lost acknowledgement. Without it DB tests explicitly skip. Linux CI runs
 PostgreSQL and race checks; Windows CI verifies unit/build portability. No real
 Langfuse or model key is used here. Full Langfuse integration remains a separately
 recorded integration test; P2's live independent release acceptance is pending.
+
+Legacy local configurations may omit the Runtime address: this service preserves
+the previous loopback default (127.0.0.1:8094) for its bounded heartbeat/client.
+Where used, Registry (8096) and ToolHub (8091) defaults are also owned by the
+service entrypoint. Explicit environment/config endpoints always take precedence.
+Configure these addresses explicitly for containers or multiple hosts. No config
+file or shared SDK role policy is rewritten by this compatibility behavior.

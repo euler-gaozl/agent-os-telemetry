@@ -11,6 +11,9 @@ import (
 
 func main() {
 	servicehost.Main(servicehost.Options{Role: "telemetry", Port: "0", Database: true, Concurrency: 16, Authorize: telemetry.Authorize, Readiness: telemetry.Readiness}, func(ctx context.Context, p *pgxpool.Pool, c servicehttp.Config) (http.Handler, func(context.Context) error, error) {
+		if err := applyLocalDefaults(); err != nil {
+			return nil, nil, err
+		}
 		client := servicehost.Client()
 		store := &telemetry.Store{DB: p, Remote: &client}
 		return servicehttp.New(c, p.Ping, func(*http.ServeMux) {}), func(ctx context.Context) error {
