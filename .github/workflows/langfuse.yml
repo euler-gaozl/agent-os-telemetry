@@ -1,0 +1,50 @@
+name: Independent exporter real Langfuse contract
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'telemetry/**'
+      - 'vendor/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'deploy/langfuse.ci.yaml'
+      - '.github/workflows/langfuse.yml'
+permissions: {contents: read}
+jobs:
+  langfuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: 'off'
+      GOPROXY: 'off'
+      TEST_DATABASE_URL: postgres://postgres:ci-database-only@127.0.0.1:5432/postgres?sslmode=disable
+      TEST_LANGFUSE_URL: http://127.0.0.1:3000
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-disposable
+      LANGFUSE_SECRET_KEY: ci-lf-disposable-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - name: Start actual self-hosted Langfuse with disposable project
+        run: |
+          mkdir -p .state/telemetry-evidence
+          docker compose -f deploy/langfuse.ci.yaml up -d --wait --wait-timeout 360
+          docker compose -f deploy/langfuse.ci.yaml images --format json > .state/telemetry-evidence/images.json
+      - name: Durable exporter, actual ingestion, read-back and duplicate recovery
+        run: |
+          set -o pipefail
+          go test -mod=vendor -race -v -count=1 -timeout 5m ./telemetry -run '^TestLangfuseLiveIngestionAndReadback$' | tee .state/telemetry-evidence/test.txt
+      - name: Retain controlled upstream diagnostics
+        if: always()
+        run: |
+          docker compose -f deploy/langfuse.ci.yaml ps --all --format json > .state/telemetry-evidence/containers.json
+          docker compose -f deploy/langfuse.ci.yaml logs --tail 150 > .state/telemetry-evidence/upstream.txt
+          for id in $(docker compose -f deploy/langfuse.ci.yaml ps --all -q); do
+            docker inspect --format '{{json .State}}' "$id" >> .state/telemetry-evidence/container-state.jsonl
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: real-langfuse-evidence, path: '.state/telemetry-evidence/'}
+      - name: Dispose upstream and fixture databases
+        if: always()
+        run: docker compose -f deploy/langfuse.ci.yaml down -v

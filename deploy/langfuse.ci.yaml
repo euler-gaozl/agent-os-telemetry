@@ -1,0 +1,92 @@
+# Disposable upstream contract test only. All credentials below are fixtures.
+# Adapted to bounded CI from Langfuse v4.56.0's official Docker Compose setup.
+name: agentos-langfuse-ci
+x-env: &env
+  DATABASE_URL: postgresql://postgres:ci-database-only@postgres:5432/postgres
+  NEXTAUTH_URL: http://localhost:3000
+  SALT: ci-salt-only
+  ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  TELEMETRY_ENABLED: 'false'
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ci-clickhouse-only
+  CLICKHOUSE_CLUSTER_ENABLED: 'false'
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ci-minio-only
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: 'true'
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ci-minio-only
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: 'true'
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  REDIS_AUTH: ci-redis-only
+services:
+  web:
+    image: docker.langfuse.com/langfuse/langfuse:4.56.0
+    mem_limit: 1536m
+    cpus: 0.75
+    ports: ['127.0.0.1:3000:3000']
+    environment:
+      <<: *env
+      HOSTNAME: 0.0.0.0
+      NODE_OPTIONS: --max-old-space-size=1024
+      NEXTAUTH_SECRET: ci-session-secret-only
+      LANGFUSE_INIT_ORG_ID: ci-org
+      LANGFUSE_INIT_ORG_NAME: Disposable CI
+      LANGFUSE_INIT_PROJECT_ID: ci-project
+      LANGFUSE_INIT_PROJECT_NAME: Disposable telemetry contract
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-ci-disposable
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ci-lf-disposable-only
+      LANGFUSE_INIT_USER_EMAIL: fixture@example.invalid
+      LANGFUSE_INIT_USER_NAME: Disposable CI fixture
+      LANGFUSE_INIT_USER_PASSWORD: ci-account-password-only
+    depends_on: &deps
+      postgres: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://127.0.0.1:3000/api/public/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      interval: 5s
+      timeout: 4s
+      retries: 60
+  worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.56.0
+    mem_limit: 1024m
+    cpus: 0.5
+    environment: {<<: *env, NODE_OPTIONS: '--max-old-space-size=768'}
+    depends_on: {web: {condition: service_healthy}}
+  postgres:
+    image: postgres:17
+    mem_limit: 512m
+    cpus: 0.25
+    ports: ['127.0.0.1:5432:5432']
+    environment: {POSTGRES_USER: postgres, POSTGRES_PASSWORD: ci-database-only, POSTGRES_DB: postgres}
+    healthcheck: {test: [CMD, pg_isready, -U, postgres], interval: 3s, timeout: 3s, retries: 30}
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.12
+    mem_limit: 2g
+    cpus: 0.75
+    environment: {CLICKHOUSE_DB: default, CLICKHOUSE_USER: clickhouse, CLICKHOUSE_PASSWORD: ci-clickhouse-only}
+    healthcheck: {test: [CMD-SHELL, 'wget -q --spider http://localhost:8123/ping'], interval: 3s, timeout: 3s, retries: 60}
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    mem_limit: 256m
+    cpus: 0.125
+    entrypoint: sh
+    command: ['-c', 'mkdir -p /data/langfuse && minio server --address ":9000" /data']
+    environment: {MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: ci-minio-only}
+    healthcheck: {test: [CMD, mc, ready, local], interval: 3s, timeout: 3s, retries: 30}
+  redis:
+    image: redis:7
+    mem_limit: 128m
+    cpus: 0.125
+    command: ['--requirepass', ci-redis-only, '--maxmemory-policy', noeviction]
+    healthcheck: {test: [CMD, redis-cli, -a, ci-redis-only, ping], interval: 3s, timeout: 3s, retries: 30}
