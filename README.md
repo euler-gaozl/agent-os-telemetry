@@ -8,6 +8,24 @@ prompts, tool arguments, results or credentials.
 
 ## Build and run
 
+`telemetry --execution-access-profile` reports the compiled `telemetry-http-v1`
+profile and exits before reading deployment configuration or connecting to any
+service. The release contract carries the same claim. The Windows coordinator
+verifies the actual binary and bound database identity, including inbox
+SELECT/INSERT/UPDATE and exports SELECT/INSERT, before start/update/rollback and
+pending recovery. The existing readiness SELECT probe alone does not establish
+those write permissions. A missing capability is conservatively treated as
+requiring legacy execution events privileges; malformed metadata never becomes
+a legacy fallback. This does not enable Langfuse or apply any database migration.
+
+Two entrypoint tests, vet, native build and the actual report passed in local
+evidence `execution-access-build-1e387f7fc44c40e094e2ce0491f0ada7`;
+44 restricted-login/release checks are recorded in
+`execution-access-release-fdce72a63e154c74a34c70f8caf37a2a`.
+Formal installation remains separate. The formal Windows account currently has
+no `telemetry_inbox`; its Owner migration must run before activating this service.
+No paid provider or GitHub Actions ran.
+
 Go 1.27.2 / PostgreSQL 18. Run `scripts/Build.ps1` (PowerShell 7) or
 `GOWORK=off go build -mod=vendor ./cmd/telemetry`. The committed vendor tree pins
 the SDK and permits one-checkout builds with no private dependency token.

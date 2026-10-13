@@ -7,9 +7,13 @@ import (
 	"github.com/euler-gaozl/agent-os-telemetry/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
+	"os"
 )
 
 func main() {
+	if reportExecutionAccess(os.Args[1:], os.Stdout) {
+		return
+	}
 	servicehost.Main(servicehost.Options{Role: "telemetry", Port: "0", Database: true, Concurrency: 16, Authorize: telemetry.Authorize, Readiness: telemetry.Readiness}, func(ctx context.Context, p *pgxpool.Pool, c servicehttp.Config) (http.Handler, func(context.Context) error, error) {
 		if err := applyLocalDefaults(); err != nil {
 			return nil, nil, err

@@ -2,6 +2,7 @@
   "schema": "public",
   "backward_compatible": true,
   "role": "telemetry",
+  "execution_access": {"format": 1, "profile": "telemetry-http-v1"},
   "migration_owner": "telemetry",
   "format": 1,
   "contract": {
