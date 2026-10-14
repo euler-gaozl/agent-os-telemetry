@@ -1,81 +1,29 @@
 # Agent OS Telemetry
 
-Independent optional event exporter. Owns only telemetry_inbox and
-telemetry_exports; consumes Runtime's claim/ack HTTP contract. Inbox commits
-before acknowledgement; failed acknowledgement can be redelivered. Event
-identity changes are rejected. It never reads Runtime's tables and never exports
-prompts, tool arguments, results or credentials.
+可独立部署、按需启用的事件导出服务。只拥有 `telemetry_inbox`、`telemetry_exports`，通过 Runtime 的 claim/ack HTTP 协议消费事件，先持久化 inbox 再确认。丢失确认可重投，事件身份变化会拒绝；不读取 Runtime 表，不导出提示词、工具参数、结果或凭证。
 
-## Build and run
+## 交付语义与当前状态
 
-`telemetry --execution-access-profile` reports the compiled `telemetry-http-v1`
-profile and exits before reading deployment configuration or connecting to any
-service. The release contract carries the same claim. The Windows coordinator
-verifies the actual binary and bound database identity, including inbox
-SELECT/INSERT/UPDATE and exports SELECT/INSERT, before start/update/rollback and
-pending recovery. The existing readiness SELECT probe alone does not establish
-those write permissions. A missing capability is conservatively treated as
-requiring legacy execution events privileges; malformed metadata never becomes
-a legacy fallback. This does not enable Langfuse or apply any database migration.
+导出具有有界批次、超时和退避。远端成功但回复丢失可能产生重复观测，因此是**至少一次投递**。Telemetry 不可用不阻塞 Agent 执行。
 
-Two entrypoint tests, vet, native build and the actual report passed in local
-evidence `execution-access-build-1e387f7fc44c40e094e2ce0491f0ada7`;
-44 restricted-login/release checks are recorded in
-`execution-access-release-fdce72a63e154c74a34c70f8caf37a2a`.
-Formal installation remains separate. The formal Windows account currently has
-no `telemetry_inbox`; its Owner migration must run before activating this service.
-No paid provider or GitHub Actions ran.
+当前正式 Windows 部署为零实例，原账号尚无所需 inbox，必须完成本服务迁移后再启用；没有配置 Langfuse 不能宣称导出可用。
 
-Go 1.27.2 / PostgreSQL 18. Run `scripts/Build.ps1` (PowerShell 7) or
-`GOWORK=off go build -mod=vendor ./cmd/telemetry`. The committed vendor tree pins
-the SDK and permits one-checkout builds with no private dependency token.
-`source-provenance.json` records its origin/version. Start with
-`bin/telemetry --config <service.json>`.
+`telemetry --execution-access-profile` 在读取配置或连接服务前返回编译的 `telemetry-http-v1`。Windows 维护器在启动、升级、回滚和中断恢复时核对程序、数据库身份及 inbox SELECT/INSERT/UPDATE、exports SELECT/INSERT。单纯 readiness SELECT 不足以证明写权限。缺少声明按旧权限需求处理，格式错误不回退；能力声明本身不执行迁移或启用 Langfuse。
 
-`deploy/service.example.json` is a placeholder contract. Supply a scoped DB URL,
-unique service token and peer hashes (including self), RUNTIME_URL, REGISTRY_URL,
-and LANGFUSE_URL. Registry supplies only the named Langfuse provider credentials.
-The executable defaults to a dynamic loopback port to avoid collisions/multiple
-instance conflicts; LISTEN can explicitly bind a fixed address. Docker uses 8099
-inside its private network. `/readyz` validates this service's schema, not the
-remote exporter. Unconfigured Langfuse is not an available export capability.
+## 构建与部署
 
-Export retries have bounded batches/timeouts/backoff. A lost successful remote
-reply may duplicate an observation: delivery is at least once, not exactly once.
-Telemetry outage does not block the Agent execution path.
+需要 Go 1.27.2、PostgreSQL 18；PowerShell 7 可执行 `scripts/Build.ps1`。也可运行 `GOWORK=off go build -mod=vendor ./cmd/telemetry`。固定 SDK 与提交的 `vendor` 不依赖相邻仓库或私有模块令牌。
 
-## Migration and verification
+按 [配置示例](deploy/service.example.json) 设置本域数据库、独立服务令牌和对端哈希（含自身）、`RUNTIME_URL`、`REGISTRY_URL`、`LANGFUSE_URL`。供应商凭证从 Registry 命名解析，使用 `bin/telemetry --config <文件>` 启动。
 
-Provision the non-owner application role, schema USAGE and no CREATE. Provide
-the DDL connection only as `MIGRATION_DATABASE_URL`; run
-`bin/migrate --role <existing-role>`. The transaction changes only the two owned
-tables and grants their DML rights. Startup checks schema, never applies DDL.
-Retain inbox/export markers through service updates and binary rollbacks under
-the compatible HTTP/data identifiers in `deploy/release-contract.json`.
+默认动态回环端口避免多实例冲突，`LISTEN` 可显式设定；Docker 私网端口为 8099。就绪检查只验证本域。多机/容器显式配置地址。
 
-Run `go vet -mod=vendor ./...` and `go test -mod=vendor -count=1 ./...`.
-With `TEST_DATABASE_URL`, tests create isolated fixture databases/NOLOGIN roles
-and verify transactions, least privilege, inbox-before-ack and redelivery after
-a lost acknowledgement. Without it DB tests explicitly skip. Linux CI runs
-PostgreSQL and race checks; Windows CI verifies unit/build portability. Standard
-verification uses no real Langfuse or model key; the separate live workflow is
-described below. P2's live independent release acceptance is recorded separately.
+## 迁移、回滚与测试
 
-The new `langfuse.yml` workflow carries the former integration repository's live
-Langfuse 4.56.0 ingestion/readback/retransmission scenario into this Owner. It
-uses this repository's exporter, a real isolated PostgreSQL inbox and real
-self-hosted Langfuse; Runtime claim/ack and Registry credential HTTP endpoints
-are explicit protocol fixtures. The independent-image integration separately
-tests actual Runtime-to-Telemetry delivery. The live test verifies durable inbox
-before acknowledgement, original event identities at Langfuse's read API,
-exclusion of a private payload marker, and two observations per identity after
-forced retransmission. This is at-least-once delivery, not upstream exactly-once.
-The first Owner live workflow result is pending; the old integration coverage
-has not been deleted or counted as a new Owner pass.
+先创建非所有者应用角色，授予 schema USAGE、禁止 CREATE。单独以 `MIGRATION_DATABASE_URL` 执行 `bin/migrate --role <账号>`，事务仅管理两张本域表与授权；服务启动不做 DDL。按 [发布契约](deploy/release-contract.json) 更新程序并保留 inbox 和导出标记。
 
-Legacy local configurations may omit the Runtime address: this service preserves
-the previous loopback default (127.0.0.1:8094) for its bounded heartbeat/client.
-Where used, Registry (8096) and ToolHub (8091) defaults are also owned by the
-service entrypoint. Explicit environment/config endpoints always take precedence.
-Configure these addresses explicitly for containers or multiple hosts. No config
-file or shared SDK role policy is rewritten by this compatibility behavior.
+运行 `go test -mod=vendor -count=1 ./...`、`go vet -mod=vendor ./...`。`TEST_DATABASE_URL` 启用隔离库/NOLOGIN 角色，验证事务、权限、先入库后确认和丢确认重投；缺少数据库时明确跳过。
+
+手动 `langfuse.yml` 使用真实 Langfuse 4.56.0、隔离 PostgreSQL 和本服务导出器，Runtime/Registry HTTP 为明确的协议夹具；检查接收、回读、隐私字段排除与重投的重复观测。新仓首次实跑仍待统一 Linux 验收，旧集成结果不算新仓通过。Actions 日常关闭。
+
+[历史说明](docs/history/service-notes-20261014.en.md) 保留权限声明检查、发布检查及尚未正式启用的边界。
