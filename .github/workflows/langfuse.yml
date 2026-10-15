@@ -1,14 +1,7 @@
 name: Independent exporter real Langfuse contract
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'telemetry/**'
-      - 'vendor/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'deploy/langfuse.ci.yaml'
-      - '.github/workflows/langfuse.yml'
+  workflow_call:
 permissions: {contents: read}
 jobs:
   langfuse:
@@ -32,8 +25,9 @@ jobs:
           docker compose -f deploy/langfuse.ci.yaml images --format json > .state/telemetry-evidence/images.json
       - name: Durable exporter, actual ingestion, read-back and duplicate recovery
         run: |
-          set -o pipefail
-          go test -mod=vendor -race -v -count=1 -timeout 5m ./telemetry -run '^TestLangfuseLiveIngestionAndReadback$' | tee .state/telemetry-evidence/test.txt
+          set -euo pipefail
+          go test -mod=vendor -race -json -count=1 -timeout 5m ./telemetry -run '^TestLangfuseLiveIngestionAndReadback$' | tee .state/telemetry-evidence/test.jsonl
+          jq -se 'any(.[]; .Action == "pass" and .Test == "TestLangfuseLiveIngestionAndReadback") and all(.[]; .Action != "skip")' .state/telemetry-evidence/test.jsonl
       - name: Retain controlled upstream diagnostics
         if: always()
         run: |

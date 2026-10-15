@@ -24,6 +24,8 @@
 
 运行 `go test -mod=vendor -count=1 ./...`、`go vet -mod=vendor ./...`。`TEST_DATABASE_URL` 启用隔离库/NOLOGIN 角色，验证事务、权限、先入库后确认和丢确认重投；缺少数据库时明确跳过。
 
-手动 `langfuse.yml` 使用真实 Langfuse 4.56.0、隔离 PostgreSQL 和本服务导出器，Runtime/Registry HTTP 为明确的协议夹具；检查接收、回读、隐私字段排除与重投的重复观测。新仓首次实跑仍待统一 Linux 验收，旧集成结果不算新仓通过。Actions 日常关闭。
+`telemetry/export_test.go` 把旧集成仓的并发导出、Runtime 接收失败时排空已落盘 inbox、OTLP 部分拒绝后重试移交到本 Owner：使用隔离 PostgreSQL、本域迁移及受限 SET ROLE，Registry/Runtime/OTLP 均为 HTTP 协议夹具，不能称为独立数据库登录、真实 Langfuse 或跨 Owner 组合验收。旧实现仅截取确认回包前 4096 字节，可能把有效 JSON 前缀误当完整确认；新增 4097 字节反例已在旧实现和真实隔离 PostgreSQL 上失败，证明它会错误写成功标记。修复后拒绝超限回包、保留待导出状态，并仍接受恰好 4096 字节的有效确认。2026-10-15 维护者 macOS 15.3/arm64 的 7 项定向测试（这 5 项及既有 inbox/迁移权限测试）使用真实 PostgreSQL 18.6、Go 1.27.2 与 race 检查全部通过，零跳过；vet/build 通过，证据保存在本机 `local/evidence/macos-telemetry-owner-20261015`。Runtime 接收失败场景顺序调用 receive/export，只证明已落盘数据的独立导出，不代表长期循环活性。旧主仓测试继续保留。
+
+仅手动/reusable 的 `langfuse.yml` 使用真实 Langfuse 4.56.0、隔离 PostgreSQL 和本服务导出器，Runtime/Registry HTTP 为明确的协议夹具；检查接收、回读、隐私字段排除与重投的重复观测。该工作流读取 Go JSON 测试事件，要求指定 live 测试实际通过且零跳过；没有 PR 自动触发。新仓首次实跑仍待统一 Linux 验收，旧集成结果不算新仓通过。Actions 日常关闭。
 
 [历史说明](docs/history/service-notes-20261014.en.md) 保留权限声明检查、发布检查及尚未正式启用的边界。

@@ -117,12 +117,16 @@ func (s *Store) exportOne(ctx context.Context, baseURL string) error {
 		return e
 	}
 	defer resp.Body.Close()
-	body, e := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	const acknowledgementLimit = 4096
+	body, e := io.ReadAll(io.LimitReader(resp.Body, acknowledgementLimit+1))
 	if e != nil {
 		return e
 	}
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("telemetry HTTP %d", resp.StatusCode)
+	}
+	if len(body) > acknowledgementLimit {
+		return errors.New("telemetry acknowledgement exceeds size limit; event remains queued")
 	}
 	var ack struct {
 		Partial struct {
